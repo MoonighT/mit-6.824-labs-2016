@@ -3,6 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
+	"unicode"
 
 	"github.com/MoonighT/mit6824/src/mapreduce"
 )
@@ -13,6 +16,14 @@ import (
 // key/value pairs, each represented by a mapreduce.KeyValue.
 func mapF(document string, value string) (res []mapreduce.KeyValue) {
 	// TODO: you have to write this function
+	fun := func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+	}
+
+	contents := strings.FieldsFunc(value, fun)
+	for _, keyword := range contents {
+		res = append(res, mapreduce.KeyValue{Key: keyword, Value: "1"})
+	}
 	return
 }
 
@@ -21,7 +32,8 @@ func mapF(document string, value string) (res []mapreduce.KeyValue) {
 // should be a single output value for that key.
 func reduceF(key string, values []string) string {
 	// TODO: you also have to write this function
-	return ""
+	size := len(values)
+	return strconv.Itoa(size)
 }
 
 // Can be run in 3 ways:
