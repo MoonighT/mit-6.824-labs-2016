@@ -9,7 +9,6 @@ import (
 func (mr *Master) schedule(phase jobPhase) {
 	var njobs int
 	var nios int // number of inputs (for reduce) or outputs (for map)
-	var otherphase int
 	switch phase {
 	case mapPhase:
 		njobs = len(mr.files)
@@ -27,30 +26,28 @@ func (mr *Master) schedule(phase jobPhase) {
 	// multiple jobs.
 	var wg sync.WaitGroup
 	wg.Add(njobs)
-
-	type Job struct {
-		file  string
-		index int
-	}
-	for i, _ := range mr.files {
-		go func(index int) {
-			w := <-mr.registerChannel
-			arg := &DoJobArgs{
-				JobName:       mr.jobName,
-				File:          mr.files[index],
-				Phase:         phase,
-				JobNumber:     index,
-				NumOtherPhase: nios,
+	for i := 0; i < njobs; i++ {
+		go func(index int, waitg *sync.WaitGroup) {
+			for {
+				w := <-mr.registerChannel
+				arg := &DoJobArgs{
+					JobName:       mr.jobName,
+					File:          mr.files[index],
+					Phase:         phase,
+					JobNumber:     index,
+					NumOtherPhase: nios,
+				}
+				ok := call(w, "Worker.DoJob", arg, new(struct{}))
+				if !ok {
+					debug("call not ok\n")
+				} else {
+					waitg.Done()
+					mr.registerChannel <- w
+					debug("call ok and done\n")
+					break
+				}
 			}
-			ok := call(w, "Worker.DoJob", arg, new(struct{}))
-			if !ok {
-				debug("call not ok")
-			} else {
-				mr.registerChannel <- w
-				wg.Done()
-				break
-			}
-		}(i)
+		}(i, &wg)
 	}
 	wg.Wait()
 	fmt.Printf("Schedule: %v phase done\n", phase)

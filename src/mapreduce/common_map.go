@@ -45,7 +45,6 @@ func doMap(
 	encMap := make([]*json.Encoder, nReduce)
 	for j := 0; j < nReduce; j++ {
 		name := reduceName(jobName, job, j)
-		debug("reduce name = %s\n", name)
 		f, err := os.Create(name)
 		if err != nil {
 			log.Fatalf("create file error %s", err)
