@@ -153,12 +153,9 @@ func (rf *Raft) election() {
 		CandidateId: rf.me,
 	}
 	lock := sync.Mutex{}
-	wg := &sync.WaitGroup{}
-	wg.Add(len(rf.peers))
 	voted := 1 // need to include itself
 	for i, _ := range rf.peers {
-		go func(index int, w *sync.WaitGroup) {
-			defer w.Done()
+		go func(index int) {
 			if index == rf.me {
 				return
 			}
@@ -170,18 +167,17 @@ func (rf *Raft) election() {
 			}
 			DPrintf("[election] %d role %d sendRequestVote args %v, reply %v, ok %v",
 				rf.me, rf.role, args, reply, ok)
-			if reply.VoteGranted {
+			if reply.VoteGranted && reply.Term == rf.currentTerm {
 				lock.Lock()
 				voted += 1
+				if voted > len(rf.peers)/2 {
+					//success
+					DPrintf("[election] one server win %d", rf.me)
+					rf.role = RAFT_LEADER
+				}
 				lock.Unlock()
 			}
-		}(i, wg)
-	}
-	wg.Wait()
-	if voted > len(rf.peers)/2 {
-		//success
-		DPrintf("[election] one server win %d", rf.me)
-		rf.role = RAFT_LEADER
+		}(i)
 	}
 }
 
@@ -215,11 +211,8 @@ func (rf *Raft) electionCheck() {
 func (rf *Raft) heartBeat() {
 	num := 1
 	lock := sync.Mutex{}
-	wg := &sync.WaitGroup{}
-	wg.Add(len(rf.peers))
 	for i, _ := range rf.peers {
-		go func(index int, w *sync.WaitGroup) {
-			defer w.Done()
+		go func(index int) {
 			if index == rf.me {
 				return
 			}
@@ -239,13 +232,7 @@ func (rf *Raft) heartBeat() {
 				}
 				lock.Unlock()
 			}
-		}(i, wg)
-	}
-	wg.Wait()
-	if num <= len(rf.peers)/2 {
-		// not leader any more
-		DPrintf("heartbeat fail change %d to follower", rf.me)
-		rf.role = RAFT_FOLLOWER
+		}(i)
 	}
 }
 

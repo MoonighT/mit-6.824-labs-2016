@@ -45,6 +45,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.role = RAFT_FOLLOWER
 		rf.currentTerm = args.Term
 		rf.votedFor = -1
+		reply.Term = rf.currentTerm
 		if rf.checkUpdateToDate() {
 			rf.votedFor = args.CandidateId
 			reply.VoteGranted = true
