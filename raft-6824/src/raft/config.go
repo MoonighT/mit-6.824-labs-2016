@@ -8,16 +8,20 @@ package raft
 // test with the original before submitting.
 //
 
-import "labrpc"
-import "log"
-import "sync"
-import "testing"
-import "runtime"
-import crand "crypto/rand"
-import "encoding/base64"
-import "sync/atomic"
-import "time"
-import "fmt"
+import (
+	"log"
+	"runtime"
+	"sync"
+	"testing"
+
+	"github.com/MoonighT/mit6824/raft-6824/src/labrpc"
+
+	crand "crypto/rand"
+	"encoding/base64"
+	"fmt"
+	"sync/atomic"
+	"time"
+)
 
 func randstring(n int) string {
 	b := make([]byte, 2*n)
@@ -259,7 +263,7 @@ func (cfg *config) setlongreordering(longrel bool) {
 // try a few times in case re-elections are needed.
 func (cfg *config) checkOneLeader() int {
 	for iters := 0; iters < 10; iters++ {
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(1500 * time.Millisecond)
 		leaders := make(map[int][]int)
 		for i := 0; i < cfg.n; i++ {
 			if cfg.connected[i] {
@@ -308,6 +312,7 @@ func (cfg *config) checkNoLeader() {
 	for i := 0; i < cfg.n; i++ {
 		if cfg.connected[i] {
 			_, is_leader := cfg.rafts[i].GetState()
+			fmt.Printf("i %d state %v connected %v", i, is_leader, cfg.connected[i])
 			if is_leader {
 				cfg.t.Fatalf("expected no leader, but %v claims to be leader", i)
 			}
