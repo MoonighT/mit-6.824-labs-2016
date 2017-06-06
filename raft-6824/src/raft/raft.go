@@ -70,7 +70,7 @@ type Raft struct {
 	role        RaftRole
 	currentTerm int
 	votedFor    int
-	logs        []*Entry
+	logs        []*Entry // start from 1
 	commitIndex int
 	lastApplied int
 
@@ -149,6 +149,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	term, isLeader = rf.GetState()
 	if isLeader {
 		// apply log entry
+		rf.logs = append(rf.logs, command)
+		index = len(rf.logs) - 1
 	}
 	return index, term, isLeader
 }
@@ -289,7 +291,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// Your initialization code here (2A, 2B, 2C).
 	rf.role = RAFT_FOLLOWER
+	rf.commitIndex = -1
+	rf.lastApplied = -1
 	rf.heartbeatChan = make(chan struct{})
+	rf.applyChan = applyCh
 	go rf.electionCheck()
 	go rf.heartBeatCheck(time.Duration(200) * time.Millisecond)
 
