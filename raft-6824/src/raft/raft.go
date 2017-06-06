@@ -53,6 +53,11 @@ const (
 	RAFT_CANDIDATE RaftRole = 3
 )
 
+type Entry struct {
+	Term    int
+	Command interface{}
+}
+
 type Raft struct {
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
 	peers     []*labrpc.ClientEnd // RPC end points of all peers
@@ -65,9 +70,16 @@ type Raft struct {
 	role        RaftRole
 	currentTerm int
 	votedFor    int
+	logs        []*Entry
+	commitIndex int
+	lastApplied int
+
+	nextIndex  []int
+	matchIndex []int
 
 	// heartBeat get chan to clear election timeout
 	heartbeatChan chan struct{}
+	applyChan     chan ApplyMsg
 }
 
 // return currentTerm and whether this server
@@ -132,7 +144,12 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	isLeader := true
 
 	// Your code here (2B).
-
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	term, isLeader = rf.GetState()
+	if isLeader {
+		// apply log entry
+	}
 	return index, term, isLeader
 }
 
@@ -275,8 +292,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.heartbeatChan = make(chan struct{})
 	go rf.electionCheck()
 	go rf.heartBeatCheck(time.Duration(200) * time.Millisecond)
-	// two ticker  one is for election  none leader
-	// only leader one is heartbeat, if recieve clear election ticker
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
