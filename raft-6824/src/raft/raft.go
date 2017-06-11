@@ -318,7 +318,7 @@ func (rf *Raft) updateCommit() {
 }
 
 func (rf *Raft) applyCommit() {
-	for i := rf.lastApplied; i <= rf.commitIndex; i++ {
+	for i := rf.lastApplied + 1; i <= rf.commitIndex; i++ {
 		if i < len(rf.logs) {
 			DPrintf("apply commit index %d, command %v",
 				i+1, rf.logs[i].Command)
