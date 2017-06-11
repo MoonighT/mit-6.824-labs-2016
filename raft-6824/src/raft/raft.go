@@ -22,6 +22,8 @@ import (
 	"sync"
 	"time"
 
+	"encoding/json"
+
 	"github.com/MoonighT/mit6824/raft-6824/src/labrpc"
 )
 
@@ -89,8 +91,10 @@ func (rf *Raft) GetState() (int, bool) {
 	var term int
 	var isleader bool
 	// Your code here (2A).
+	rf.mu.Lock()
 	term = rf.currentTerm
 	isleader = (rf.role == RAFT_LEADER)
+	rf.mu.Unlock()
 	return term, isleader
 }
 
@@ -141,18 +145,17 @@ func (rf *Raft) readPersist(data []byte) {
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	index := -1
 	term := -1
-	isLeader := true
-
+	isLeader := false
 	// Your code here (2B).
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
 	term, isLeader = rf.GetState()
 	if isLeader {
+		rf.mu.Lock()
+		defer rf.mu.Unlock()
 		// apply log entry
-		DPrintf("leader %d term %d append command %v",
-			index, term, command)
 		rf.logs = append(rf.logs, &Entry{Term: term, Command: command})
 		index = len(rf.logs) - 1
+		DPrintf("leader %d index %d term %d append command %v",
+			rf.me, index, term, command)
 		index++ //since index array start from 1
 	}
 	return index, term, isLeader
@@ -179,7 +182,6 @@ func (rf *Raft) election() {
 	if args.LastLogIndex >= 0 {
 		args.LastLogTerm = rf.logs[len(rf.logs)-1].Term
 	}
-	lock := sync.Mutex{}
 	voted := 1 // need to include itself
 	for i := range rf.peers {
 		go func(index int) {
@@ -192,18 +194,18 @@ func (rf *Raft) election() {
 				DPrintf("rpc error")
 				return
 			}
-			DPrintf("[election] %d role %d sendRequestVote args %v, reply %v, ok %v",
-				rf.me, rf.role, args, reply, ok)
+			rf.mu.Lock()
+			argsStr, _ := json.Marshal(args)
+			DPrintf("[election] %d args %s, reply %v", rf.me, argsStr, reply)
 			if reply.VoteGranted && reply.Term == rf.currentTerm {
-				lock.Lock()
 				voted++
 				if voted > len(rf.peers)/2 {
 					//success
 					DPrintf("[election] one server win %d", rf.me)
 					rf.role = RAFT_LEADER
 				}
-				lock.Unlock()
 			}
+			rf.mu.Unlock()
 		}(i)
 	}
 }
@@ -212,8 +214,10 @@ func (rf *Raft) electionCheck() {
 	for {
 		random := rand.Int()%500 + 500 // millisecond
 		timeout := time.Duration(int64(random)) * time.Millisecond
+		//DPrintf("election %d timeout %d", rf.me, random)
 		select {
 		case <-rf.heartbeatChan:
+			//DPrintf("%d get heartbeat", rf.me)
 			break
 		case <-time.After(timeout):
 			rf.mu.Lock()
@@ -238,10 +242,10 @@ func (rf *Raft) electionCheck() {
 func (rf *Raft) heartBeat() {
 	for i := range rf.peers {
 		go func(index int) {
-			rf.mu.Lock()
 			if index == rf.me {
 				return
 			}
+			rf.mu.Lock()
 			// send log entries
 			// send from nextIndex[i] to latest log
 			from := rf.nextIndex[index]
@@ -262,11 +266,13 @@ func (rf *Raft) heartBeat() {
 			reply := &AppendEntriesReply{}
 			rf.mu.Unlock()
 			ok := rf.sendAppendEntries(index, args, reply)
-			DPrintf("[heartbeat] %d, role %d sendAppendEntries args %v, reply %v, ok %v",
-				rf.me, rf.role, args, reply, ok)
+			argsStr, _ := json.Marshal(args)
 			if ok {
 				rf.mu.Lock()
+				DPrintf("[heartbeat] %d, role %d sendAppendEntries args %s, %d reply %v, ok %v",
+					rf.me, rf.role, argsStr, index, reply, ok)
 				if reply.Term > rf.currentTerm {
+					DPrintf("follower term > leader %d", rf.me)
 					rf.currentTerm = reply.Term
 					rf.role = RAFT_FOLLOWER
 					rf.votedFor = -1
@@ -294,11 +300,14 @@ func (rf *Raft) heartBeat() {
 }
 
 func (rf *Raft) updateCommit() {
+	//rf.mu.Lock()
+	//defer rf.mu.Unlock()
+	DPrintf("update Commit matchIndex %d %v", rf.commitIndex, rf.matchIndex)
 	for i := rf.commitIndex + 1; i < len(rf.logs); i++ {
 		if rf.logs[i].Term == rf.currentTerm {
 			num := 1
 			for p := range rf.peers {
-				if i == rf.me {
+				if p == rf.me {
 					continue
 				}
 				if rf.matchIndex[p] >= i {
@@ -318,10 +327,12 @@ func (rf *Raft) updateCommit() {
 }
 
 func (rf *Raft) applyCommit() {
+	//rf.mu.Lock()
+	//defer rf.mu.Unlock()
 	for i := rf.lastApplied + 1; i <= rf.commitIndex; i++ {
 		if i < len(rf.logs) {
-			DPrintf("apply commit index %d, command %v",
-				i+1, rf.logs[i].Command)
+			DPrintf("%d apply commit index %d, command %v",
+				rf.me, i+1, rf.logs[i].Command)
 			rf.applyChan <- ApplyMsg{
 				Index:   i + 1,
 				Command: rf.logs[i].Command,
@@ -338,13 +349,14 @@ func (rf *Raft) heartBeatCheck(timeout time.Duration) {
 			rf.mu.Lock()
 			switch rf.role {
 			case RAFT_LEADER:
-				DPrintf("heartbeat check %d role %d", rf.me, rf.role)
+				//DPrintf("[heartbeat] check %d role %d", rf.me, rf.role)
 				// commit log entries from peers response
 				rf.updateCommit()
 				// apply commits
 				rf.applyCommit()
 				go rf.heartBeat()
 			default:
+				rf.applyCommit()
 			}
 			rf.mu.Unlock()
 		}

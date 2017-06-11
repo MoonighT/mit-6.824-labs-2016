@@ -1,5 +1,9 @@
 package raft
 
+import (
+	"encoding/json"
+)
+
 // AppendEntriesArgs ...
 type AppendEntriesArgs struct {
 	Term         int
@@ -21,7 +25,7 @@ type AppendEntriesReply struct {
 // AppendEntries rpc call, append entries from leader
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.mu.Lock()
-	rf.mu.Unlock()
+	defer rf.mu.Unlock()
 	reply.Term = rf.currentTerm
 	reply.Success = false
 	if args.Term < rf.currentTerm {
@@ -49,9 +53,11 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// update commit index
 	rf.updateCommitIndex(args)
 	rf.currentTerm = args.Term
+	if rf.role != RAFT_FOLLOWER {
+		DPrintf("update current term to %d, change %d role to follower", args.Term, rf.me)
+	}
 	rf.role = RAFT_FOLLOWER
 	rf.votedFor = -1
-	DPrintf("update current term to %d, change %d role to follower", args.Term, rf.me)
 	rf.heartbeatChan <- struct{}{}
 	return
 }
@@ -74,6 +80,8 @@ func (rf *Raft) appendEntryToLog(args *AppendEntriesArgs) {
 			break
 		}
 	}
+	logsStr, _ := json.Marshal(rf.logs)
+	DPrintf("append logs entry %d logs %s", rf.me, string(logsStr))
 	return
 }
 
@@ -83,6 +91,7 @@ func (rf *Raft) updateCommitIndex(args *AppendEntriesArgs) {
 		if rf.commitIndex > len(rf.logs)-1 {
 			rf.commitIndex = len(rf.logs) - 1
 		}
+		DPrintf("%d update commit index %d", rf.me, rf.commitIndex)
 	}
 }
 

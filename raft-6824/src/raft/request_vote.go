@@ -27,9 +27,13 @@ func (rf *Raft) checkUpdateToDate(args *RequestVoteArgs) bool {
 	if args.LastLogIndex < 0 {
 		return true
 	}
-	if args.LastLogTerm > rf.currentTerm {
+	lastLogTerm := 0
+	if len(rf.logs) > 0 {
+		lastLogTerm = rf.logs[len(rf.logs)-1].Term
+	}
+	if args.LastLogTerm > lastLogTerm {
 		return true
-	} else if args.LastLogTerm == rf.currentTerm {
+	} else if args.LastLogTerm == lastLogTerm {
 		//candidate’s log is at least as up-to-date
 		if args.LastLogIndex >= len(rf.logs)-1 {
 			return true
@@ -59,6 +63,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.votedFor = -1
 		reply.Term = rf.currentTerm
 		if rf.checkUpdateToDate(args) {
+			DPrintf("logs of %d is more than %d", args.CandidateId,
+				rf.me)
 			rf.votedFor = args.CandidateId
 			reply.VoteGranted = true
 		} else {
