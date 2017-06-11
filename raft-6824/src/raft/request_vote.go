@@ -22,8 +22,20 @@ type RequestVoteReply struct {
 	VoteGranted bool
 }
 
-func (rf *Raft) checkUpdateToDate() bool {
-	return true
+func (rf *Raft) checkUpdateToDate(args *RequestVoteArgs) bool {
+	// first time  len(logs) == 0  lastindex = -1 lastterm = 0
+	if args.LastLogIndex < 0 {
+		return true
+	}
+	if args.LastLogTerm > rf.currentTerm {
+		return true
+	} else if args.LastLogTerm == rf.currentTerm {
+		//candidate’s log is at least as up-to-date
+		if args.LastLogIndex >= len(rf.logs)-1 {
+			return true
+		}
+	}
+	return false
 }
 
 //
@@ -46,7 +58,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.currentTerm = args.Term
 		rf.votedFor = -1
 		reply.Term = rf.currentTerm
-		if rf.checkUpdateToDate() {
+		if rf.checkUpdateToDate(args) {
 			rf.votedFor = args.CandidateId
 			reply.VoteGranted = true
 		} else {
@@ -59,7 +71,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	switch rf.role {
 	case RAFT_FOLLOWER:
 		DPrintf("[request vote] same term %d vote for %d", args.Term, args.CandidateId)
-		if (rf.votedFor == -1 || rf.votedFor == rf.me) && rf.checkUpdateToDate() {
+		if (rf.votedFor == -1 || rf.votedFor == rf.me) && rf.checkUpdateToDate(args) {
 			rf.votedFor = args.CandidateId
 			reply.VoteGranted = true
 			return

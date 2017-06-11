@@ -1,6 +1,6 @@
 package raft
 
-// Append Entries args
+// AppendEntriesArgs ...
 type AppendEntriesArgs struct {
 	Term         int
 	LeaderId     int
@@ -10,7 +10,7 @@ type AppendEntriesArgs struct {
 	LeaderCommit int
 }
 
-// Append Entries reply
+// AppendEntriesReply ...
 type AppendEntriesReply struct {
 	Term          int
 	Success       bool
@@ -18,6 +18,7 @@ type AppendEntriesReply struct {
 	ConflictIndex int
 }
 
+// AppendEntries rpc call, append entries from leader
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.mu.Lock()
 	rf.mu.Unlock()
@@ -26,22 +27,27 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	if args.Term < rf.currentTerm {
 		return
 	}
+	// args term >= rf.currentTerm
 	// first append when rf log is empty
 	if args.PrevLogIndex < 0 {
-		// append all logs and update commit index
+		// append all logs
+		rf.appendEntryToLog(args)
+	} else {
+		// check prevlogindex and prevlogterm exist in rf logs
+		if len(rf.logs)-1 < args.PrevLogIndex {
+			return
+		}
+		if rf.logs[args.PrevLogIndex].Term != args.PrevLogTerm {
+			return
+		}
+		//If an existing entry conflicts with a new one (same index
+		//but different terms), delete the existing entry and all that
+		//follow it
+		rf.appendEntryToLog(args)
 	}
-	// args term >= rf.currentTerm
-	// check prevlogindex and prevlogterm exist in rf logs
-	if len(rf.logs)-1 < args.PrevLogIndex {
-		return
-	}
-	if rf.logs[args.PrevLogIndex].Term != args.PrevLogTerm {
-		return
-	}
-	//If an existing entry conflicts with a new one (same index
-	//but different terms), delete the existing entry and all that
-	//follow it
-
+	reply.Success = true
+	// update commit index
+	rf.updateCommitIndex(args)
 	rf.currentTerm = args.Term
 	rf.role = RAFT_FOLLOWER
 	rf.votedFor = -1
@@ -55,18 +61,16 @@ func (rf *Raft) appendEntryToLog(args *AppendEntriesArgs) {
 		return
 	}
 	baseIndex := args.PrevLogIndex + 1
-	for i, _ := range args.Entries {
+	for i := range args.Entries {
 		if baseIndex+i < len(rf.logs) {
 			if args.Entries[baseIndex+i].Term != rf.logs[baseIndex+i].Term {
 				//conflict
 				rf.logs = append(rf.logs[:baseIndex+i], args.Entries[i:]...)
 				break
-			} else {
-				rf.logs = append(rf.logs, args.Entries[i])
 			}
 		} else {
 			// all remain not exist
-			rf.logs = append(rf.logs, args.Entries[i:])
+			rf.logs = append(rf.logs, args.Entries[i:]...)
 			break
 		}
 	}
@@ -75,8 +79,10 @@ func (rf *Raft) appendEntryToLog(args *AppendEntriesArgs) {
 
 func (rf *Raft) updateCommitIndex(args *AppendEntriesArgs) {
 	if args.LeaderCommit > rf.commitIndex {
-		//TODO check this minus 1
-		rf.commitIndex = min(args.LeaderCommit, len(rf.logs)-1)
+		rf.commitIndex = args.LeaderCommit
+		if rf.commitIndex > len(rf.logs)-1 {
+			rf.commitIndex = len(rf.logs) - 1
+		}
 	}
 }
 
