@@ -116,29 +116,21 @@ func TestFailAgree2B(t *testing.T) {
 
 	// follower network failure
 	leader := cfg.checkOneLeader()
-	fmt.Printf("Test (2B): newwork failure on %d...\n", (leader+1)%servers)
 	cfg.disconnect((leader + 1) % servers)
 
 	// agree despite one failed server?
-	fmt.Printf("Test (2B): add command 102...\n")
 	cfg.one(102, servers-1)
-	fmt.Printf("Test (2B): add command 103...\n")
 	cfg.one(103, servers-1)
 	time.Sleep(RaftElectionTimeout)
-	fmt.Printf("Test (2B): add command 104...\n")
 	cfg.one(104, servers-1)
-	fmt.Printf("Test (2B): add command 105...\n")
 	cfg.one(105, servers-1)
 
 	// failed server re-connected
-	fmt.Printf("Test (2B): reconnect...\n")
 	cfg.connect((leader + 1) % servers)
 
 	// agree with full set of servers?
-	fmt.Printf("Test (2B): add command 106...\n")
 	cfg.one(106, servers)
 	time.Sleep(RaftElectionTimeout)
-	fmt.Printf("Test (2B): add command 107...\n")
 	cfg.one(107, servers)
 
 	fmt.Printf("  ... Passed\n")

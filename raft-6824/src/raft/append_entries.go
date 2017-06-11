@@ -69,7 +69,7 @@ func (rf *Raft) appendEntryToLog(args *AppendEntriesArgs) {
 	baseIndex := args.PrevLogIndex + 1
 	for i := range args.Entries {
 		if baseIndex+i < len(rf.logs) {
-			if args.Entries[baseIndex+i].Term != rf.logs[baseIndex+i].Term {
+			if args.Entries[i].Term != rf.logs[baseIndex+i].Term {
 				//conflict
 				rf.logs = append(rf.logs[:baseIndex+i], args.Entries[i:]...)
 				break

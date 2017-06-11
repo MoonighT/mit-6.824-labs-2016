@@ -266,9 +266,9 @@ func (rf *Raft) heartBeat() {
 			reply := &AppendEntriesReply{}
 			rf.mu.Unlock()
 			ok := rf.sendAppendEntries(index, args, reply)
-			argsStr, _ := json.Marshal(args)
 			if ok {
 				rf.mu.Lock()
+				argsStr, _ := json.Marshal(args)
 				DPrintf("[heartbeat] %d, role %d sendAppendEntries args %s, %d reply %v, ok %v",
 					rf.me, rf.role, argsStr, index, reply, ok)
 				if reply.Term > rf.currentTerm {
