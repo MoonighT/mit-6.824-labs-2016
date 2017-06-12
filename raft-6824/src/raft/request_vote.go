@@ -70,6 +70,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		} else {
 			reply.VoteGranted = false
 		}
+		rf.persist()
 		return
 	}
 
@@ -80,6 +81,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		if (rf.votedFor == -1 || rf.votedFor == rf.me) && rf.checkUpdateToDate(args) {
 			rf.votedFor = args.CandidateId
 			reply.VoteGranted = true
+			rf.persist()
 			return
 		}
 	case RAFT_CANDIDATE:

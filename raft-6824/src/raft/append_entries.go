@@ -59,6 +59,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	rf.role = RAFT_FOLLOWER
 	rf.votedFor = -1
 	rf.heartbeatChan <- struct{}{}
+	rf.persist()
 	return
 }
 
