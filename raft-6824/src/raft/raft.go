@@ -157,6 +157,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		defer rf.mu.Unlock()
 		// apply log entry
 		rf.logs = append(rf.logs, &Entry{Term: term, Command: command})
+		rf.persist()
 		index = len(rf.logs) - 1
 		DPrintf("leader %d index %d term %d append command %v",
 			rf.me, index, term, command)
