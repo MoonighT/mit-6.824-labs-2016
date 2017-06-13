@@ -1,12 +1,14 @@
 package raftkv
 
-import "labrpc"
+import "github.com/MoonighT/mit6824/raft-6824/src/labrpc"
 import "crypto/rand"
 import "math/big"
 
 type Clerk struct {
 	servers []*labrpc.ClientEnd
 	// You will have to modify this struct.
+	id         int
+	lastLeader int
 }
 
 func nrand() int64 {
@@ -38,15 +40,6 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 func (ck *Clerk) Get(key string) string {
 
 	// You will have to modify this function.
-	for i := range ck.servers {
-		ok := ck.servers[i].Call("RaftKV.Get", &args, &reply)
-		if ok {
-			if reply.WrongLeader {
-			} else {
-				return reply.Value
-			}
-		}
-	}
 	return ""
 }
 
@@ -62,15 +55,7 @@ func (ck *Clerk) Get(key string) string {
 //
 func (ck *Clerk) PutAppend(key string, value string, op string) {
 	// You will have to modify this function.
-	for i := range ck.servers {
-		ok := ck.servers[i].Call("RaftKV.PutAppend", &args, &reply)
-		if ok {
-			if reply.WrongLeader {
-			} else {
-				return
-			}
-		}
-	}
+
 }
 
 func (ck *Clerk) Put(key string, value string) {
