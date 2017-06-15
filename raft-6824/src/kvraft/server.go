@@ -39,6 +39,7 @@ type RaftKV struct {
 
 	// Your definitions here.
 	processid int
+	nextIndex int
 	dataStore map[string]string // map of key -> value
 }
 
@@ -69,7 +70,8 @@ func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) {
 		//client process to this command
 		DPrintf("kv get waiting for index %d processid %d",
 			index, kv.processid)
-		if index == kv.processid {
+		if index == kv.nextIndex && kv.processid >= kv.nextIndex {
+			kv.nextIndex++
 			reply.Err = OK
 			reply.WrongLeader = false
 			reply.Value = kv.dataStore[args.Key]
@@ -112,7 +114,8 @@ func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		//client process to this command
 		DPrintf("kv put waiting for index %d processid %d",
 			index, kv.processid)
-		if index == kv.processid {
+		if index == kv.nextIndex && kv.processid >= kv.nextIndex {
+			kv.nextIndex++
 			reply.Err = OK
 			reply.WrongLeader = false
 			kv.mu.Unlock()
@@ -189,6 +192,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 
 	// You may need initialization code here.
 	kv.processid = 0
+	kv.nextIndex = 1
 	kv.dataStore = make(map[string]string)
 	go kv.applyMessage()
 	return kv
