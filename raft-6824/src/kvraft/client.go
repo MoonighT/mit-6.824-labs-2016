@@ -115,7 +115,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 			if ok {
 				argStr, _ := json.Marshal(args)
 				replyStr, _ := json.Marshal(reply)
-				DPrintf("[Set] get from %d arg %s reply %s", ck.lastLeader,
+				DPrintf("[Set] set to %d arg %s reply %s", ck.lastLeader,
 					argStr, replyStr)
 				if reply.WrongLeader == false {
 					return
