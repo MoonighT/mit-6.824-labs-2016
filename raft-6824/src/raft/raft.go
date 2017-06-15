@@ -395,6 +395,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.applyChan = applyCh
 	rf.nextIndex = make([]int, len(peers))
 	rf.matchIndex = make([]int, len(peers))
+	for i := range rf.matchIndex {
+		rf.matchIndex[i] = -1
+	}
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 	go rf.electionCheck()

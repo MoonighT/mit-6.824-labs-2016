@@ -15,8 +15,6 @@ type PutAppendArgs struct {
 	// You'll have to add definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
-	Opid     int
-	Clientid int
 }
 
 type PutAppendReply struct {

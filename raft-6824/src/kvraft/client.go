@@ -1,13 +1,17 @@
 package raftkv
 
-import "github.com/MoonighT/mit6824/raft-6824/src/labrpc"
-import "crypto/rand"
-import "math/big"
+import (
+	"crypto/rand"
+	"encoding/json"
+	"math/big"
+	"time"
+
+	"github.com/MoonighT/mit6824/raft-6824/src/labrpc"
+)
 
 type Clerk struct {
 	servers []*labrpc.ClientEnd
 	// You will have to modify this struct.
-	id         int
 	lastLeader int
 }
 
@@ -22,6 +26,7 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 	ck := new(Clerk)
 	ck.servers = servers
 	// You'll have to add code here.
+	ck.lastLeader = -1
 	return ck
 }
 
@@ -38,8 +43,50 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 // arguments. and reply must be passed as a pointer.
 //
 func (ck *Clerk) Get(key string) string {
-
 	// You will have to modify this function.
+	DPrintf("[Get] key %s", key)
+	args := &GetArgs{
+		Key: key,
+	}
+	for {
+		if ck.lastLeader >= 0 {
+			reply := &GetReply{}
+			ok := ck.servers[ck.lastLeader].Call("RaftKV.Get", args, reply)
+			if ok {
+				argStr, _ := json.Marshal(args)
+				replyStr, _ := json.Marshal(reply)
+				DPrintf("[Get] get from %d arg %s reply %s", ck.lastLeader,
+					argStr, replyStr)
+				if reply.WrongLeader == false {
+					if reply.Err == ErrNoKey {
+						return ""
+					} else {
+						return reply.Value
+					}
+				}
+			}
+		}
+		for i := range ck.servers {
+			reply := &GetReply{}
+			ok := ck.servers[i].Call("RaftKV.Get", args, reply)
+			if ok {
+				argStr, _ := json.Marshal(args)
+				replyStr, _ := json.Marshal(reply)
+				DPrintf("[Get] get from %d arg %s reply %s", i,
+					argStr, replyStr)
+
+				if reply.WrongLeader == false {
+					ck.lastLeader = i
+					if reply.Err == ErrNoKey {
+						return ""
+					} else {
+						return reply.Value
+					}
+				}
+			}
+		}
+		time.Sleep(time.Millisecond * 10)
+	}
 	return ""
 }
 
@@ -55,6 +102,42 @@ func (ck *Clerk) Get(key string) string {
 //
 func (ck *Clerk) PutAppend(key string, value string, op string) {
 	// You will have to modify this function.
+	DPrintf("[Set] key %s value %s", key, value)
+	args := &PutAppendArgs{
+		Key:   key,
+		Value: value,
+		Op:    op,
+	}
+	for {
+		if ck.lastLeader >= 0 {
+			reply := &PutAppendReply{}
+			ok := ck.servers[ck.lastLeader].Call("RaftKV.PutAppend", args, reply)
+			if ok {
+				argStr, _ := json.Marshal(args)
+				replyStr, _ := json.Marshal(reply)
+				DPrintf("[Set] get from %d arg %s reply %s", ck.lastLeader,
+					argStr, replyStr)
+				if reply.WrongLeader == false {
+					return
+				}
+			}
+		}
+		for i := range ck.servers {
+			reply := &PutAppendReply{}
+			ok := ck.servers[i].Call("RaftKV.PutAppend", args, reply)
+			if ok {
+				argStr, _ := json.Marshal(args)
+				replyStr, _ := json.Marshal(reply)
+				DPrintf("[Set] get from %d arg %s reply %s", i,
+					argStr, replyStr)
+				if reply.WrongLeader == false {
+					ck.lastLeader = i
+					return
+				}
+			}
+		}
+		time.Sleep(time.Millisecond * 10)
+	}
 
 }
 

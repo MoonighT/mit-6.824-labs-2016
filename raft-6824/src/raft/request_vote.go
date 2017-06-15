@@ -63,8 +63,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.votedFor = -1
 		reply.Term = rf.currentTerm
 		if rf.checkUpdateToDate(args) {
-			DPrintf("logs of %d is more than %d", args.CandidateId,
-				rf.me)
+			//DPrintf("logs of %d is more than %d", args.CandidateId,
+			//		rf.me)
 			rf.votedFor = args.CandidateId
 			reply.VoteGranted = true
 		} else {

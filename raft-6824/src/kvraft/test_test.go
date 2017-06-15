@@ -129,9 +129,11 @@ func partitioner(t *testing.T, cfg *config, ch chan bool, done *int32) {
 // size) shouldn't exceed 2*maxraftstate.
 func GenericTest(t *testing.T, tag string, nclients int, unreliable bool, crash bool, partitions bool, maxraftstate int) {
 	const nservers = 5
+	fmt.Printf("make config nclinets %d\n", nclients)
 	cfg := make_config(t, tag, nservers, unreliable, maxraftstate)
 	defer cfg.cleanup()
 
+	fmt.Printf("make client\n")
 	ck := cfg.makeClient(cfg.All())
 
 	done_partitioner := int32(0)
@@ -152,16 +154,19 @@ func GenericTest(t *testing.T, tag string, nclients int, unreliable bool, crash 
 			}()
 			last := ""
 			key := strconv.Itoa(cli)
+			fmt.Printf("client put key %s,val %s\n", key, last)
 			myck.Put(key, last)
 			for atomic.LoadInt32(&done_clients) == 0 {
 				if (rand.Int() % 1000) < 500 {
 					nv := "x " + strconv.Itoa(cli) + " " + strconv.Itoa(j) + " y"
 					// log.Printf("%d: client new append %v\n", cli, nv)
+					fmt.Printf("client append key %s,val %s\n", key, nv)
 					myck.Append(key, nv)
 					last = NextValue(last, nv)
 					j++
 				} else {
 					// log.Printf("%d: client new get %v\n", cli, key)
+					fmt.Printf("client get key %s\n", key)
 					v := myck.Get(key)
 					if v != last {
 						log.Fatalf("get wrong value, key %v, wanted:\n%v\n, got\n%v\n", key, last, v)
@@ -179,7 +184,7 @@ func GenericTest(t *testing.T, tag string, nclients int, unreliable bool, crash 
 
 		atomic.StoreInt32(&done_clients, 1)     // tell clients to quit
 		atomic.StoreInt32(&done_partitioner, 1) // tell partitioner to quit
-
+		fmt.Printf("finish spawn test\n")
 		if partitions {
 			// log.Printf("wait for partitioner\n")
 			<-ch_partitioner
@@ -191,7 +196,7 @@ func GenericTest(t *testing.T, tag string, nclients int, unreliable bool, crash 
 			// wait for a while so that we have a new term
 			time.Sleep(electionTimeout)
 		}
-
+		fmt.Printf("finish partition test\n")
 		if crash {
 			// log.Printf("shutdown servers\n")
 			for i := 0; i < nservers; i++ {
@@ -208,6 +213,7 @@ func GenericTest(t *testing.T, tag string, nclients int, unreliable bool, crash 
 			cfg.ConnectAll()
 		}
 
+		fmt.Printf("finish crash test\n")
 		// log.Printf("wait for clients\n")
 		for i := 0; i < nclients; i++ {
 			// log.Printf("read from clients %d\n", i)
@@ -221,6 +227,7 @@ func GenericTest(t *testing.T, tag string, nclients int, unreliable bool, crash 
 			checkClntAppends(t, i, v, j)
 		}
 
+		fmt.Printf("finish check test\n")
 		if maxraftstate > 0 {
 			// Check maximum after the servers have processed all client
 			// requests and had time to checkpoint
@@ -228,6 +235,7 @@ func GenericTest(t *testing.T, tag string, nclients int, unreliable bool, crash 
 				t.Fatalf("logs were not trimmed (%v > 2*%v)", cfg.LogSize(), maxraftstate)
 			}
 		}
+		fmt.Printf("finish checkpoint test\n")
 	}
 
 	fmt.Printf("  ... Passed\n")

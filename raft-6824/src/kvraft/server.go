@@ -4,12 +4,13 @@ import (
 	"encoding/gob"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/MoonighT/mit6824/raft-6824/src/labrpc"
 	"github.com/MoonighT/mit6824/raft-6824/src/raft"
 )
 
-const Debug = 0
+const Debug = 1
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -22,11 +23,10 @@ type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
-	Key      string
-	Value    string
-	Op       string
-	Id       int
-	Clientid int
+	Key   string
+	Value string
+	Op    string
+	Id    int
 }
 
 type RaftKV struct {
@@ -38,24 +38,19 @@ type RaftKV struct {
 	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
-	clientopid map[int]int       // map of clientid -> opid
-	dataStore  map[string]string // map of key -> value
+	processid int
+	dataStore map[string]string // map of key -> value
 }
 
 func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) {
+	DPrintf("[raftkv server] get")
 	// Your code here.
-}
-
-func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
-	// Your code here.
-	op := &Op{
-		Key:      args.Key,
-		Value:    args.Value,
-		Op:       args.Op,
-		Id:       args.Opid,
-		Clientid: args.Clientid,
+	op := Op{
+		Key: args.Key,
 	}
-	_, term, isLeader := kv.rf.Start(op)
+	kv.mu.Lock()
+	index, term, isLeader := kv.rf.Start(op)
+	kv.mu.Unlock()
 	if !isLeader {
 		reply.WrongLeader = true
 		reply.Err = ErrNoKey
@@ -71,16 +66,61 @@ func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		}
 		kv.mu.Lock()
 		// raft apply opid log,
-		if val, ok := kv.clientopid[args.Clientid]; ok {
-			//client process to this command
-			if val == args.Opid {
-				reply.Err = OK
-				kv.mu.Unlock()
-				return
-			}
+		//client process to this command
+		DPrintf("kv get waiting for index %d processid %d",
+			index, kv.processid)
+		if index == kv.processid {
+			reply.Err = OK
+			reply.WrongLeader = false
+			reply.Value = kv.dataStore[args.Key]
+			kv.mu.Unlock()
+			return
 		}
 		kv.mu.Unlock()
 		// not process to this command
+		time.Sleep(time.Millisecond * 10)
+	}
+
+}
+
+func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
+	DPrintf("[raftkv server] put")
+	// Your code here.
+	op := Op{
+		Key:   args.Key,
+		Value: args.Value,
+		Op:    args.Op,
+	}
+	kv.mu.Lock()
+	index, term, isLeader := kv.rf.Start(op)
+	kv.mu.Unlock()
+	if !isLeader {
+		reply.WrongLeader = true
+		reply.Err = ErrNoKey
+		return
+	}
+	for {
+		currentTerm, currentLeader := kv.rf.GetState()
+		if currentTerm != term || !currentLeader {
+			// term change or leader change
+			reply.WrongLeader = true
+			reply.Err = ErrNoKey
+			return
+		}
+		kv.mu.Lock()
+		// raft apply opid log,
+		//client process to this command
+		DPrintf("kv put waiting for index %d processid %d",
+			index, kv.processid)
+		if index == kv.processid {
+			reply.Err = OK
+			reply.WrongLeader = false
+			kv.mu.Unlock()
+			return
+		}
+		kv.mu.Unlock()
+		// not process to this command
+		time.Sleep(time.Millisecond * 10)
 	}
 }
 
@@ -95,7 +135,7 @@ func (kv *RaftKV) Kill() {
 	// Your code here, if desired.
 }
 
-func (kv *RaftKV) doOperation(op *Op) {
+func (kv *RaftKV) doOperation(op Op) {
 	//within mu lock
 	switch op.Op {
 	case "Put":
@@ -111,19 +151,11 @@ func (kv *RaftKV) doOperation(op *Op) {
 
 func (kv *RaftKV) applyMessage() {
 	for msg := range kv.applyCh {
-		cmd := msg.Command
-		op := cmd.(*Op)
+		op := msg.Command.(Op)
 		kv.mu.Lock()
-		if val, ok := kv.clientopid[op.Clientid]; ok {
-			if val < op.Id {
-				// new command
-				kv.clientopid[op.Clientid] = op.Id
-				kv.doOperation(op)
-			}
-		} else {
-			kv.clientopid[op.Clientid] = op.Id
-			kv.doOperation(op)
-		}
+		kv.processid = msg.Index
+		kv.doOperation(op)
+		DPrintf("apply message index = %d", msg.Index)
 		kv.mu.Unlock()
 	}
 }
@@ -156,6 +188,8 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 
 	// You may need initialization code here.
-
+	kv.processid = 0
+	kv.dataStore = make(map[string]string)
+	go kv.applyMessage()
 	return kv
 }
