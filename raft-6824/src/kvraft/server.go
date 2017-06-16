@@ -24,10 +24,11 @@ type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
-	Key   string
-	Value string
-	Op    string
-	Id    int
+	Key      string
+	Value    string
+	Op       string
+	Clientid int
+	Msgid    int
 }
 
 type RaftKV struct {
@@ -39,8 +40,7 @@ type RaftKV struct {
 	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
-	processid int
-	nextIndex int
+	processid map[int]int
 	dataStore map[string]string // map of key -> value
 }
 
@@ -48,10 +48,12 @@ func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) {
 	DPrintf("[raftkv server] get")
 	// Your code here.
 	op := Op{
-		Key: args.Key,
+		Key:      args.Key,
+		Clientid: args.Clientid,
+		Msgid:    args.Msgid,
 	}
 	kv.mu.Lock()
-	index, term, isLeader := kv.rf.Start(op)
+	_, term, isLeader := kv.rf.Start(op)
 	kv.mu.Unlock()
 	if !isLeader {
 		reply.WrongLeader = true
@@ -66,12 +68,16 @@ func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) {
 			reply.Err = ErrNoKey
 			return
 		}
-		kv.mu.Lock()
 		// raft apply opid log,
 		//client process to this command
-		DPrintf("%d kv get waiting for index %d processid %d nextid %d",
-			kv.me, index, kv.processid, kv.nextIndex)
-		if kv.processid >= index {
+		kv.mu.Lock()
+		if _, ok := kv.processid[args.Clientid]; !ok {
+			kv.mu.Unlock()
+			continue
+		}
+		DPrintf("%d kv get waiting for id %d processid %d",
+			kv.me, args.Msgid, kv.processid[args.Clientid])
+		if kv.processid[args.Clientid] >= args.Msgid {
 			reply.Err = OK
 			reply.WrongLeader = false
 			reply.Value = kv.dataStore[args.Key]
@@ -86,12 +92,14 @@ func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) {
 }
 
 func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
-	DPrintf("[raftkv server] put")
+	DPrintf("[raftkv server] %d put key %s val %s", kv.me, args.Key, args.Value)
 	// Your code here.
 	op := Op{
-		Key:   args.Key,
-		Value: args.Value,
-		Op:    args.Op,
+		Key:      args.Key,
+		Value:    args.Value,
+		Op:       args.Op,
+		Clientid: args.Clientid,
+		Msgid:    args.Msgid,
 	}
 	kv.mu.Lock()
 	index, term, isLeader := kv.rf.Start(op)
@@ -99,6 +107,7 @@ func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	if !isLeader {
 		reply.WrongLeader = true
 		reply.Err = ErrNoKey
+		DPrintf("%d finish start is not leader %d", kv.me, index)
 		return
 	}
 	DPrintf("%d finish start index %d", kv.me, index)
@@ -111,11 +120,16 @@ func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 			return
 		}
 		kv.mu.Lock()
+		if _, ok := kv.processid[args.Clientid]; !ok {
+			kv.mu.Unlock()
+			continue
+		}
+
 		// raft apply opid log,
 		//client process to this command
-		DPrintf("%d kv put waiting for index %d processid %d nextid %d",
-			kv.me, index, kv.processid, kv.nextIndex)
-		if kv.processid >= index {
+		DPrintf("%d kv get waiting for id %d processid %d",
+			kv.me, args.Msgid, kv.processid[args.Clientid])
+		if kv.processid[args.Clientid] >= args.Msgid {
 			//kv.nextIndex++
 			reply.Err = OK
 			reply.WrongLeader = false
@@ -159,10 +173,13 @@ func (kv *RaftKV) applyMessage() {
 	for msg := range kv.applyCh {
 		op := msg.Command.(Op)
 		kv.mu.Lock()
-		if kv.processid < msg.Index {
-			kv.processid = msg.Index
+		if _, ok := kv.processid[op.Clientid]; !ok {
+			kv.processid[op.Clientid] = op.Msgid
+			kv.doOperation(op)
+		} else if kv.processid[op.Clientid] < op.Msgid {
+			kv.processid[op.Clientid] = op.Msgid
+			kv.doOperation(op)
 		}
-		kv.doOperation(op)
 		kv.mu.Unlock()
 	}
 }
@@ -195,8 +212,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 
 	// You may need initialization code here.
-	kv.processid = 0
-	kv.nextIndex = 1
+	kv.processid = make(map[int]int)
 	kv.dataStore = make(map[string]string)
 	go kv.applyMessage()
 	return kv

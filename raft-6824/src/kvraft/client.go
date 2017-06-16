@@ -13,6 +13,8 @@ type Clerk struct {
 	servers []*labrpc.ClientEnd
 	// You will have to modify this struct.
 	lastLeader int
+	id         int
+	msgid      int
 }
 
 func nrand() int64 {
@@ -27,6 +29,8 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 	ck.servers = servers
 	// You'll have to add code here.
 	ck.lastLeader = -1
+	ck.id = int(nrand())
+	ck.msgid = 0
 	return ck
 }
 
@@ -45,8 +49,11 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 func (ck *Clerk) Get(key string) string {
 	// You will have to modify this function.
 	DPrintf("[Get] key %s", key)
+	ck.msgid++
 	args := &GetArgs{
-		Key: key,
+		Key:      key,
+		Clientid: ck.id,
+		Msgid:    ck.msgid,
 	}
 	for {
 		if ck.lastLeader >= 0 {
@@ -103,14 +110,18 @@ func (ck *Clerk) Get(key string) string {
 func (ck *Clerk) PutAppend(key string, value string, op string) {
 	// You will have to modify this function.
 	DPrintf("[Set] key %s value %s", key, value)
+	ck.msgid++
 	for {
 		if ck.lastLeader >= 0 {
 			args := &PutAppendArgs{
-				Key:   key,
-				Value: value,
-				Op:    op,
+				Key:      key,
+				Value:    value,
+				Op:       op,
+				Clientid: ck.id,
+				Msgid:    ck.msgid,
 			}
 			reply := &PutAppendReply{}
+			DPrintf("client call put key %s val %s to %d", args.Key, args.Value, ck.lastLeader)
 			ok := ck.servers[ck.lastLeader].Call("RaftKV.PutAppend", args, reply)
 			if ok {
 				argStr, _ := json.Marshal(args)
@@ -124,16 +135,19 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 		}
 		for i := range ck.servers {
 			args := &PutAppendArgs{
-				Key:   key,
-				Value: value,
-				Op:    op,
+				Key:      key,
+				Value:    value,
+				Op:       op,
+				Clientid: ck.id,
+				Msgid:    ck.msgid,
 			}
 			reply := &PutAppendReply{}
+			DPrintf("client call put key %s val %s to %d", args.Key, args.Value, i)
 			ok := ck.servers[i].Call("RaftKV.PutAppend", args, reply)
 			if ok {
 				argStr, _ := json.Marshal(args)
 				replyStr, _ := json.Marshal(reply)
-				DPrintf("[Set] get from %d arg %s reply %s", i,
+				DPrintf("[Set] set to %d arg %s reply %s", i,
 					argStr, replyStr)
 				if reply.WrongLeader == false {
 					ck.lastLeader = i
