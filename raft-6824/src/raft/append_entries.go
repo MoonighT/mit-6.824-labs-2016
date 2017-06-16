@@ -51,6 +51,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 	reply.Success = true
 	// update commit index
+	rf.persist()
 	rf.updateCommitIndex(args)
 	rf.currentTerm = args.Term
 	if rf.role != RAFT_FOLLOWER {
@@ -59,7 +60,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	rf.role = RAFT_FOLLOWER
 	rf.votedFor = -1
 	rf.heartbeatChan <- struct{}{}
-	rf.persist()
 	return
 }
 

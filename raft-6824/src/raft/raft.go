@@ -178,6 +178,7 @@ func (rf *Raft) Kill() {
 
 func (rf *Raft) election() {
 	rf.currentTerm++
+	rf.persist()
 	args := &RequestVoteArgs{
 		Term:         rf.currentTerm,
 		CandidateId:  rf.me,
