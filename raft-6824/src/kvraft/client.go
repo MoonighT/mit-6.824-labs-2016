@@ -103,13 +103,13 @@ func (ck *Clerk) Get(key string) string {
 func (ck *Clerk) PutAppend(key string, value string, op string) {
 	// You will have to modify this function.
 	DPrintf("[Set] key %s value %s", key, value)
-	args := &PutAppendArgs{
-		Key:   key,
-		Value: value,
-		Op:    op,
-	}
 	for {
 		if ck.lastLeader >= 0 {
+			args := &PutAppendArgs{
+				Key:   key,
+				Value: value,
+				Op:    op,
+			}
 			reply := &PutAppendReply{}
 			ok := ck.servers[ck.lastLeader].Call("RaftKV.PutAppend", args, reply)
 			if ok {
@@ -123,6 +123,11 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 			}
 		}
 		for i := range ck.servers {
+			args := &PutAppendArgs{
+				Key:   key,
+				Value: value,
+				Op:    op,
+			}
 			reply := &PutAppendReply{}
 			ok := ck.servers[i].Call("RaftKV.PutAppend", args, reply)
 			if ok {

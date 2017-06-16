@@ -2,7 +2,7 @@ package raftkv
 
 import (
 	"encoding/gob"
-	"log"
+	"fmt"
 	"sync"
 	"time"
 
@@ -14,7 +14,8 @@ const Debug = 1
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
-		log.Printf(format, a...)
+		fmt.Printf(format, a...)
+		fmt.Printf("\n")
 	}
 	return
 }
@@ -140,6 +141,8 @@ func (kv *RaftKV) Kill() {
 
 func (kv *RaftKV) doOperation(op Op) {
 	//within mu lock
+	DPrintf("[doOperation] me %d op %s, key %s, value %s",
+		kv.me, op.Op, op.Key, op.Value)
 	switch op.Op {
 	case "Put":
 		kv.dataStore[op.Key] = op.Value
@@ -156,9 +159,10 @@ func (kv *RaftKV) applyMessage() {
 	for msg := range kv.applyCh {
 		op := msg.Command.(Op)
 		kv.mu.Lock()
-		kv.processid = msg.Index
+		if kv.processid < msg.Index {
+			kv.processid = msg.Index
+		}
 		kv.doOperation(op)
-		DPrintf("apply message index = %d", msg.Index)
 		kv.mu.Unlock()
 	}
 }

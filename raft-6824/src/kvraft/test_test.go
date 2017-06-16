@@ -267,8 +267,8 @@ func TestUnreliableOneKey(t *testing.T) {
 
 	ck.Put("k", "")
 
-	const nclient = 5
-	const upto = 10
+	const nclient = 1
+	const upto = 5
 	spawn_clients_and_wait(t, cfg, nclient, func(me int, myck *Clerk, t *testing.T) {
 		n := 0
 		for n < upto {
