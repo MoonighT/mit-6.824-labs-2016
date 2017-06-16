@@ -69,10 +69,9 @@ func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) {
 		kv.mu.Lock()
 		// raft apply opid log,
 		//client process to this command
-		DPrintf("kv get waiting for index %d processid %d",
-			index, kv.processid)
-		if index == kv.nextIndex && kv.processid >= kv.nextIndex {
-			kv.nextIndex++
+		DPrintf("%d kv get waiting for index %d processid %d nextid %d",
+			kv.me, index, kv.processid, kv.nextIndex)
+		if kv.processid >= index {
 			reply.Err = OK
 			reply.WrongLeader = false
 			reply.Value = kv.dataStore[args.Key]
@@ -102,6 +101,7 @@ func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		reply.Err = ErrNoKey
 		return
 	}
+	DPrintf("%d finish start index %d", kv.me, index)
 	for {
 		currentTerm, currentLeader := kv.rf.GetState()
 		if currentTerm != term || !currentLeader {
@@ -113,10 +113,10 @@ func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		kv.mu.Lock()
 		// raft apply opid log,
 		//client process to this command
-		DPrintf("kv put waiting for index %d processid %d",
-			index, kv.processid)
-		if index == kv.nextIndex && kv.processid >= kv.nextIndex {
-			kv.nextIndex++
+		DPrintf("%d kv put waiting for index %d processid %d nextid %d",
+			kv.me, index, kv.processid, kv.nextIndex)
+		if kv.processid >= index {
+			//kv.nextIndex++
 			reply.Err = OK
 			reply.WrongLeader = false
 			kv.mu.Unlock()

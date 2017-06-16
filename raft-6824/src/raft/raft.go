@@ -281,8 +281,8 @@ func (rf *Raft) heartBeat() {
 					rf.currentTerm = reply.Term
 					rf.role = RAFT_FOLLOWER
 					rf.votedFor = -1
-					rf.mu.Unlock()
 					rf.persist()
+					rf.mu.Unlock()
 					return
 				}
 				if reply.Success {
