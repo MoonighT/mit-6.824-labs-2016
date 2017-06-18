@@ -419,7 +419,7 @@ func TestSnapshotRPC(t *testing.T) {
 
 	ck.Put("a", "A")
 	check(t, ck, "a", "A")
-
+	fmt.Printf("start partition\n")
 	// a bunch of puts into the majority partition.
 	cfg.partition([]int{0, 1}, []int{2})
 	{
@@ -431,6 +431,7 @@ func TestSnapshotRPC(t *testing.T) {
 		ck1.Put("b", "B")
 	}
 
+	fmt.Printf("finish put key values \n")
 	// check that the majority partition has thrown away
 	// most of its log entries.
 	if cfg.LogSize() > 2*maxraftstate {

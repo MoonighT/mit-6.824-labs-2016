@@ -138,7 +138,8 @@ func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 			reply.Err = OK
 			reply.WrongLeader = false
 			// after put, need to check log size
-			if kv.persister.RaftStateSize() > kv.maxraftstate {
+			if kv.persister.RaftStateSize() >= kv.maxraftstate &&
+				kv.maxraftstate > 0 {
 				// kv build snapshot
 				DPrintf("start building snapshot size = %d", kv.persister.RaftStateSize())
 				kv.buildSnapshot(index, term)
