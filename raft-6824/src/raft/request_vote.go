@@ -30,12 +30,14 @@ func (rf *Raft) checkUpdateToDate(args *RequestVoteArgs) bool {
 	lastLogTerm := 0
 	if len(rf.logs) > 0 {
 		lastLogTerm = rf.logs[len(rf.logs)-1].Term
+	} else if rf.lastIncludeTerm > 0 {
+		lastLogTerm = rf.lastIncludeTerm
 	}
 	if args.LastLogTerm > lastLogTerm {
 		return true
 	} else if args.LastLogTerm == lastLogTerm {
 		//candidate’s log is at least as up-to-date
-		if args.LastLogIndex >= len(rf.logs)-1 {
+		if args.LastLogIndex >= rf.indexph2l(len(rf.logs))-1 {
 			return true
 		}
 	}

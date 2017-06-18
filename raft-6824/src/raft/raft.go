@@ -71,15 +71,22 @@ type Raft struct {
 	// Your data here (2A, 2B, 2C).
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
-	role        RaftRole
+	role RaftRole
+	// persist
 	currentTerm int
 	votedFor    int
-	logs        []*Entry // first index is 1
+	logs        []*Entry //
+	// volitile on all server
 	commitIndex int
 	lastApplied int
 
+	// volitile on leader
 	nextIndex  []int // init to 0
 	matchIndex []int // init to 0
+
+	// snapshot metadata
+	lastIncludeIndex int
+	lastIncludeTerm  int
 
 	// heartBeat get chan to clear election timeout
 	heartbeatChan chan struct{}
@@ -89,7 +96,6 @@ type Raft struct {
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
-
 	var term int
 	var isleader bool
 	// Your code here (2A).
@@ -98,6 +104,37 @@ func (rf *Raft) GetState() (int, bool) {
 	isleader = (rf.role == RAFT_LEADER)
 	rf.mu.Unlock()
 	return term, isleader
+}
+
+// TakeSnapshot kv will call this to start snapshot
+func (rf *Raft) TakeSnapshot(index, term int) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	rf.discardLogs(index, term)
+}
+
+// DiscardLogs before index, will start from index + 1
+func (rf *Raft) discardLogs(index, term int) {
+	rf.lastIncludeIndex = index
+	rf.lastIncludeTerm = term
+	if index+1 < rf.indexph2l(len(rf.logs)) {
+		rf.logs = rf.logs[rf.indexl2ph(index+1):]
+	} else {
+		// clear whole logs
+		rf.logs = rf.logs[0:0]
+	}
+}
+
+func (rf *Raft) indexph2l(index int) int {
+	return index + rf.lastIncludeIndex + 1
+}
+
+func (rf *Raft) indexl2ph(index int) int {
+	if index-rf.lastIncludeIndex-1 < 0 {
+		DPrintf("ERROR cannot access snapshoted data")
+		return -1
+	}
+	return index - rf.lastIncludeIndex - 1
 }
 
 //
@@ -113,6 +150,8 @@ func (rf *Raft) persist() {
 	e.Encode(rf.currentTerm)
 	e.Encode(rf.votedFor)
 	e.Encode(rf.logs)
+	e.Encode(rf.lastIncludeIndex)
+	e.Encode(rf.lastIncludeTerm)
 	data := w.Bytes()
 	rf.persister.SaveRaftState(data)
 }
@@ -128,6 +167,8 @@ func (rf *Raft) readPersist(data []byte) {
 	d.Decode(&rf.currentTerm)
 	d.Decode(&rf.votedFor)
 	d.Decode(&rf.logs)
+	d.Decode(&rf.lastIncludeIndex)
+	d.Decode(&rf.lastIncludeTerm)
 	if data == nil || len(data) < 1 { // bootstrap without any state?
 		return
 	}
@@ -159,6 +200,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		rf.logs = append(rf.logs, &Entry{Term: term, Command: command})
 		rf.persist()
 		index = len(rf.logs) - 1
+		index = rf.indexph2l(index)
 		DPrintf("leader %d index %d term %d append command %v",
 			rf.me, index, term, command)
 		index++ //since index array start from 1
@@ -182,7 +224,7 @@ func (rf *Raft) election() {
 	args := &RequestVoteArgs{
 		Term:         rf.currentTerm,
 		CandidateId:  rf.me,
-		LastLogIndex: len(rf.logs) - 1,
+		LastLogIndex: rf.indexph2l(len(rf.logs) - 1),
 		LastLogTerm:  0,
 	}
 	if args.LastLogIndex >= 0 {
@@ -245,6 +287,12 @@ func (rf *Raft) electionCheck() {
 
 }
 
+func (rf *Raft) sendSnapshot() {
+	rf.mu.Lock()
+	//TODO
+	defer rf.mu.Unlock()
+}
+
 func (rf *Raft) heartBeat() {
 	for i := range rf.peers {
 		go func(index int) {
@@ -256,11 +304,17 @@ func (rf *Raft) heartBeat() {
 			// send from nextIndex[i] to latest log
 			from := rf.nextIndex[index]
 			prevIndex := from - 1
+			if prevIndex <= rf.lastIncludeIndex {
+				//need to sendSnapshot
+				go sendSnapshot()
+				rf.mu.Unlock()
+				return
+			}
 			prevTerm := 0
 			if prevIndex >= 0 {
-				prevTerm = rf.logs[prevIndex].Term
+				prevTerm = rf.logs[rf.indexl2ph(prevIndex)].Term
 			}
-			toSendLogs := rf.logs[from:]
+			toSendLogs := rf.logs[rf.indexl2ph(from):]
 			args := &AppendEntriesArgs{
 				Term:         rf.currentTerm,
 				LeaderId:     rf.me,
@@ -311,7 +365,7 @@ func (rf *Raft) updateCommit() {
 	//defer rf.mu.Unlock()
 	DPrintf("update Commit matchIndex %d %v", rf.commitIndex, rf.matchIndex)
 	for i := rf.commitIndex + 1; i < len(rf.logs); i++ {
-		if rf.logs[i].Term == rf.currentTerm {
+		if rf.logs[rf.indexl2ph(i)].Term == rf.currentTerm {
 			num := 1
 			for p := range rf.peers {
 				if p == rf.me {
@@ -337,12 +391,12 @@ func (rf *Raft) applyCommit() {
 	//rf.mu.Lock()
 	//defer rf.mu.Unlock()
 	for i := rf.lastApplied + 1; i <= rf.commitIndex; i++ {
-		if i < len(rf.logs) {
+		if i < rf.indexph2l(len(rf.logs)) {
 			DPrintf("%d apply commit index %d, command %v",
-				rf.me, i+1, rf.logs[i].Command)
+				rf.me, i+1, rf.logs[rf.indexl2ph(i)].Command)
 			rf.applyChan <- ApplyMsg{
 				Index:   i + 1,
-				Command: rf.logs[i].Command,
+				Command: rf.logs[rf.indexl2ph(i)].Command,
 			}
 			rf.lastApplied = i
 		}
@@ -396,6 +450,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.applyChan = applyCh
 	rf.nextIndex = make([]int, len(peers))
 	rf.matchIndex = make([]int, len(peers))
+	rf.lastIncludeIndex = -1
+	rf.lastIncludeTerm = -1
 	for i := range rf.matchIndex {
 		rf.matchIndex[i] = -1
 	}

@@ -38,7 +38,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.appendEntryToLog(args)
 	} else {
 		// check prevlogindex and prevlogterm exist in rf logs
-		if len(rf.logs)-1 < args.PrevLogIndex {
+		if rf.indexph2l(len(rf.logs)-1) < args.PrevLogIndex {
 			return
 		}
 		if rf.logs[args.PrevLogIndex].Term != args.PrevLogTerm {
@@ -69,10 +69,10 @@ func (rf *Raft) appendEntryToLog(args *AppendEntriesArgs) {
 	}
 	baseIndex := args.PrevLogIndex + 1
 	for i := range args.Entries {
-		if baseIndex+i < len(rf.logs) {
-			if args.Entries[i].Term != rf.logs[baseIndex+i].Term {
+		if baseIndex+i < rf.indexph2l(len(rf.logs)) {
+			if args.Entries[i].Term != rf.logs[rf.indexl2ph(baseIndex+i)].Term {
 				//conflict
-				rf.logs = append(rf.logs[:baseIndex+i], args.Entries[i:]...)
+				rf.logs = append(rf.logs[:rf.indexl2ph(baseIndex+i)], args.Entries[i:]...)
 				break
 			}
 		} else {
@@ -89,8 +89,8 @@ func (rf *Raft) appendEntryToLog(args *AppendEntriesArgs) {
 func (rf *Raft) updateCommitIndex(args *AppendEntriesArgs) {
 	if args.LeaderCommit > rf.commitIndex {
 		rf.commitIndex = args.LeaderCommit
-		if rf.commitIndex > len(rf.logs)-1 {
-			rf.commitIndex = len(rf.logs) - 1
+		if rf.commitIndex > rf.indexph2l(len(rf.logs))-1 {
+			rf.commitIndex = rf.indexph2l(len(rf.logs)) - 1
 		}
 		DPrintf("%d update commit index %d", rf.me, rf.commitIndex)
 	}

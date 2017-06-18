@@ -1,6 +1,7 @@
 package raftkv
 
 import (
+	"bytes"
 	"encoding/gob"
 	"fmt"
 	"sync"
@@ -40,8 +41,11 @@ type RaftKV struct {
 	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
-	processid map[int]int
-	dataStore map[string]string // map of key -> value
+	processid        map[int]int
+	dataStore        map[string]string // map of key -> value
+	persister        *raft.Persister
+	lastIncludeIndex int
+	lastIncludeTerm  int
 }
 
 func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) {
@@ -133,6 +137,15 @@ func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 			//kv.nextIndex++
 			reply.Err = OK
 			reply.WrongLeader = false
+			// after put, need to check log size
+			if kv.persister.RaftStateSize() > kv.maxraftstate {
+				// kv build snapshot
+				DPrintf("start building snapshot size = %d", kv.persister.RaftStateSize())
+				kv.buildSnapshot(index, term)
+				// tell raft to discard old log, since kv start from 1
+				// while raft log start from 0
+				kv.rf.TakeSnapshot(kv.lastIncludeIndex-1, kv.lastIncludeTerm)
+			}
 			kv.mu.Unlock()
 			return
 		}
@@ -140,6 +153,28 @@ func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		// not process to this command
 		time.Sleep(time.Millisecond * 10)
 	}
+}
+
+// with kv mutex
+func (kv *RaftKV) buildSnapshot(index, term int) {
+	w := new(bytes.Buffer)
+	e := gob.NewEncoder(w)
+	e.Encode(index)
+	e.Encode(term)
+	e.Encode(kv.dataStore)
+	data := w.Bytes()
+	kv.persister.SaveSnapshot(data)
+	kv.lastIncludeIndex = index
+	kv.lastIncludeTerm = term
+}
+
+func (kv *RaftKV) restoreSnapshot(data []byte) {
+	r := bytes.NewBuffer(data)
+	e := gob.NewDecoder(r)
+	e.Decode(&kv.lastIncludeIndex)
+	e.Decode(&kv.lastIncludeTerm)
+	e.Decode(&kv.dataStore)
+	return
 }
 
 //
@@ -171,16 +206,22 @@ func (kv *RaftKV) doOperation(op Op) {
 
 func (kv *RaftKV) applyMessage() {
 	for msg := range kv.applyCh {
-		op := msg.Command.(Op)
-		kv.mu.Lock()
-		if _, ok := kv.processid[op.Clientid]; !ok {
-			kv.processid[op.Clientid] = op.Msgid
-			kv.doOperation(op)
-		} else if kv.processid[op.Clientid] < op.Msgid {
-			kv.processid[op.Clientid] = op.Msgid
-			kv.doOperation(op)
+		if msg.UseSnapshot == false {
+			op := msg.Command.(Op)
+			kv.mu.Lock()
+			if _, ok := kv.processid[op.Clientid]; !ok {
+				kv.processid[op.Clientid] = op.Msgid
+				kv.doOperation(op)
+			} else if kv.processid[op.Clientid] < op.Msgid {
+				kv.processid[op.Clientid] = op.Msgid
+				kv.doOperation(op)
+			}
+			kv.mu.Unlock()
+		} else {
+			kv.mu.Lock()
+			kv.restoreSnapshot(msg.Snapshot)
+			kv.mu.Unlock()
 		}
-		kv.mu.Unlock()
 	}
 }
 
@@ -210,10 +251,11 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
-
+	kv.persister = persister
 	// You may need initialization code here.
 	kv.processid = make(map[int]int)
 	kv.dataStore = make(map[string]string)
+	kv.restoreSnapshot(kv.persister.ReadSnapshot())
 	go kv.applyMessage()
 	return kv
 }
