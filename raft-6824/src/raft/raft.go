@@ -108,6 +108,7 @@ func (rf *Raft) GetState() (int, bool) {
 
 // TakeSnapshot kv will call this to start snapshot
 func (rf *Raft) TakeSnapshot(index, term int) {
+	DPrintf("%d Take snapshot index %d term %d", rf.me, index, term)
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	rf.discardLogs(index, term)
@@ -115,14 +116,20 @@ func (rf *Raft) TakeSnapshot(index, term int) {
 
 // DiscardLogs before index, will start from index + 1
 func (rf *Raft) discardLogs(index, term int) {
-	rf.lastIncludeIndex = index
-	rf.lastIncludeTerm = term
+	DPrintf("%d discard logs index %d, logs before %v",
+		rf.me, index, rf.logs)
+	DPrintf("indexph2l %d, indexl2ph %d", rf.indexph2l(len(rf.logs)),
+		rf.indexl2ph(index+1))
 	if index+1 < rf.indexph2l(len(rf.logs)) {
 		rf.logs = rf.logs[rf.indexl2ph(index+1):]
 	} else {
 		// clear whole logs
 		rf.logs = rf.logs[0:0]
 	}
+	rf.lastIncludeIndex = index
+	rf.lastIncludeTerm = term
+	DPrintf("%d discard logs index %d, logs after %v",
+		rf.me, index, rf.logs)
 }
 
 func (rf *Raft) indexph2l(index int) int {
@@ -228,7 +235,11 @@ func (rf *Raft) election() {
 		LastLogTerm:  0,
 	}
 	if args.LastLogIndex >= 0 {
-		args.LastLogTerm = rf.logs[len(rf.logs)-1].Term
+		if len(rf.logs) > 0 {
+			args.LastLogTerm = rf.logs[len(rf.logs)-1].Term
+		} else if rf.lastIncludeTerm > 0 {
+			args.LastLogTerm = rf.lastIncludeTerm
+		}
 	}
 	voted := 1 // need to include itself
 	for i := range rf.peers {
@@ -287,10 +298,37 @@ func (rf *Raft) electionCheck() {
 
 }
 
-func (rf *Raft) sendSnapshot() {
+func (rf *Raft) sendSnapshot(index int) {
 	rf.mu.Lock()
-	//TODO
+	args := &InstallSnapshotArgs{
+		Term:             rf.currentTerm,
+		Leaderid:         rf.me,
+		LastIncludeIndex: rf.lastIncludeIndex,
+		LastIncludeTerm:  rf.lastIncludeTerm,
+		Offset:           0,
+		Data:             rf.persister.ReadSnapshot(),
+		Done:             true,
+	}
+	reply := &InstallSnapshotReply{}
+	argStr, _ := json.Marshal(args)
+	DPrintf("%d send install snapshot to %d, args %s",
+		rf.me, index, argStr)
+	ok := rf.sendInstallSnapshot(index, args, reply)
+	if ok {
+		if reply.Term == rf.currentTerm {
+			rf.matchIndex[index] = rf.lastIncludeIndex
+			rf.nextIndex[index] = rf.matchIndex[index] + 1
+		}
+	}
 	defer rf.mu.Unlock()
+}
+
+func (rf *Raft) getLogByIndex(index int) (bool, *Entry) {
+	// index is logic index
+	if rf.indexl2ph(index) >= 0 && rf.indexl2ph(index) < len(rf.logs) {
+		return true, rf.logs[rf.indexl2ph(index)]
+	}
+	return false, nil
 }
 
 func (rf *Raft) heartBeat() {
@@ -304,17 +342,22 @@ func (rf *Raft) heartBeat() {
 			// send from nextIndex[i] to latest log
 			from := rf.nextIndex[index]
 			prevIndex := from - 1
-			if prevIndex <= rf.lastIncludeIndex {
+			if rf.lastIncludeIndex >= 0 && prevIndex < rf.lastIncludeIndex {
 				//need to sendSnapshot
-				go sendSnapshot()
-				rf.mu.Unlock()
-				return
+				DPrintf("%d sendsnapshot %d lastincludeindex %d, previndex %d",
+					rf.me, index, rf.lastIncludeIndex, prevIndex)
+				go rf.sendSnapshot(index)
 			}
 			prevTerm := 0
-			if prevIndex >= 0 {
-				prevTerm = rf.logs[rf.indexl2ph(prevIndex)].Term
+			if ok, entry := rf.getLogByIndex(prevIndex); ok {
+				prevTerm = entry.Term
+			} else if rf.lastIncludeTerm > 0 {
+				prevTerm = rf.lastIncludeTerm
 			}
-			toSendLogs := rf.logs[rf.indexl2ph(from):]
+			toSendLogs := make([]*Entry, 0)
+			if rf.indexl2ph(from) >= 0 {
+				toSendLogs = rf.logs[rf.indexl2ph(from):]
+			}
 			args := &AppendEntriesArgs{
 				Term:         rf.currentTerm,
 				LeaderId:     rf.me,
