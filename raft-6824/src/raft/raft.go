@@ -394,13 +394,20 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.lastApplied = -1
 	rf.heartbeatChan = make(chan struct{})
 	rf.applyChan = applyCh
+	// initialize from state persisted before a crash
+	rf.readPersist(persister.ReadRaftState())
 	rf.nextIndex = make([]int, len(peers))
+	for i := range rf.nextIndex {
+		rf.nextIndex[i] = 0
+		if len(rf.logs) > 0 {
+			rf.nextIndex[i] = len(rf.logs) - 1
+		}
+	}
 	rf.matchIndex = make([]int, len(peers))
 	for i := range rf.matchIndex {
 		rf.matchIndex[i] = -1
 	}
-	// initialize from state persisted before a crash
-	rf.readPersist(persister.ReadRaftState())
+
 	go rf.electionCheck()
 	go rf.heartBeatCheck(time.Duration(200) * time.Millisecond)
 	return rf
