@@ -1,11 +1,14 @@
 package shardmaster
 
-
 import "raft"
 import "labrpc"
 import "sync"
 import "encoding/gob"
 
+const JOIN = 0
+const LEAVE = 1
+const MOVE = 2
+const QUERY = 3
 
 type ShardMaster struct {
 	mu      sync.Mutex
@@ -14,15 +17,15 @@ type ShardMaster struct {
 	applyCh chan raft.ApplyMsg
 
 	// Your data here.
-
-	configs []Config // indexed by config num
+	processid map[int]int
+	configs   []Config // indexed by config num
 }
-
 
 type Op struct {
 	// Your data here.
+	option  int
+	payload interface{}
 }
-
 
 func (sm *ShardMaster) Join(args *JoinArgs, reply *JoinReply) {
 	// Your code here.
@@ -39,7 +42,6 @@ func (sm *ShardMaster) Move(args *MoveArgs, reply *MoveReply) {
 func (sm *ShardMaster) Query(args *QueryArgs, reply *QueryReply) {
 	// Your code here.
 }
-
 
 //
 // the tester calls Kill() when a ShardMaster instance won't
